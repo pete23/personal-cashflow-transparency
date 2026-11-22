@@ -16,6 +16,7 @@
   button { font: inherit; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px;
            background: #f6f8fa; color: var(--text); cursor: pointer; }
   button:hover { border-color: var(--accent); }
+  #view-link { color: var(--accent); }
   #output { overflow-x: auto; }
   .pvtUi { font-size: 13px; }
   table.pvtTable td.pvtVal, table.pvtTable td.pvtTotal, table.pvtTable td.pvtGrandTotal,
@@ -26,6 +27,7 @@
 <header>
   <h1>Cashflow</h1>
   <span id="status">Loading transactions…</span>
+  <a id="view-link" href="./">Link to this view</a>
   <button id="reset" type="button">Reset view</button>
 </header>
 <div id="output"></div>
@@ -36,7 +38,10 @@
 <script src="vendor/subtotal.min.js"></script>
 <script>
 const STORAGE_KEY = "cashflow-pivot-view";
-const SAVED_KEYS = ["rows", "cols", "vals", "aggregatorName", "rendererName", "inclusions", "exclusions", "rowOrder", "colOrder"];
+// Filters are kept as exclusions only: pivottable also reports the matching inclusions, but saving those
+// would pin today's values and hide any new year or category when the view is reopened.
+const SAVED_KEYS = ["rows", "cols", "vals", "aggregatorName", "rendererName", "exclusions", "rowOrder", "colOrder"];
+const DEFAULT_ORDER = "key_a_to_z";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const utils = $.pivotUtilities;
@@ -52,7 +57,7 @@ const DEFAULT_VIEW = {
   rendererName: "Table With Subtotal",
 };
 
-function loadView() {
+function storedView() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
     return saved && typeof saved === "object" ? saved : {};
@@ -61,10 +66,33 @@ function loadView() {
   }
 }
 
-function saveView(config) {
+// A view in the URL is one query parameter per key, each JSON-encoded so values with commas survive.
+function urlView() {
+  const view = {};
+  for (const [key, value] of new URLSearchParams(location.search)) {
+    if (!SAVED_KEYS.includes(key)) continue;
+    try { view[key] = JSON.parse(value); } catch (e) { /* ignore a malformed parameter */ }
+  }
+  return view;
+}
+
+function viewQuery(config) {
+  const params = new URLSearchParams();
+  for (const key of SAVED_KEYS) {
+    const value = config[key];
+    // Leave out defaults to keep links short; rows and cols are kept even when empty, since [] differs from the default.
+    if (value === undefined || (key === "exclusions" && $.isEmptyObject(value))) continue;
+    if ((key === "rowOrder" || key === "colOrder") && value === DEFAULT_ORDER) continue;
+    params.set(key, JSON.stringify(value));
+  }
+  return "?" + params.toString();
+}
+
+function onRefresh(config) {
   const view = {};
   for (const key of SAVED_KEYS) view[key] = config[key];
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(view)); } catch (e) { /* storage unavailable */ }
+  $("#view-link").attr("href", location.pathname + viewQuery(view));
 }
 
 function render(data, view) {
@@ -81,7 +109,7 @@ function render(data, view) {
     sorters: { Month: utils.sortAs(MONTHS) },
     hiddenFromDragDrop: ["Amount"],
     unusedAttrsVertical: true,
-    onRefresh: saveView,
+    onRefresh: onRefresh,
   }, DEFAULT_VIEW, view), true);
 }
 
@@ -93,9 +121,12 @@ fetch("transactions.json")
   .then(data => {
     const unclassified = data.filter(r => r.Group === "Uncategorised").length;
     $("#status").text(`${data.length.toLocaleString()} transactions · ${unclassified.toLocaleString()} unclassified`);
-    render(data, loadView());
+    // A view in the URL wins over the one remembered in this browser.
+    const fromUrl = urlView();
+    render(data, $.isEmptyObject(fromUrl) ? storedView() : fromUrl);
     $("#reset").on("click", () => {
       try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* storage unavailable */ }
+      history.replaceState(null, "", location.pathname);
       render(data, {});
     });
   })
