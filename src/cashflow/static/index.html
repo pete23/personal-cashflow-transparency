@@ -66,8 +66,11 @@ function storedView() {
   }
 }
 
-// A view in the URL is one query parameter per key, each JSON-encoded so values with commas survive.
+// A view in the URL holds only what differs from the default: one query parameter per key, each
+// JSON-encoded so values with commas survive. Any query string makes the URL authoritative, so an
+// all-default view links to "?view=default" rather than to a bare URL, which means "as last left".
 function urlView() {
+  if (!location.search) return null;
   const view = {};
   for (const [key, value] of new URLSearchParams(location.search)) {
     if (!SAVED_KEYS.includes(key)) continue;
@@ -76,16 +79,18 @@ function urlView() {
   return view;
 }
 
+function isDefault(key, value) {
+  if (key in DEFAULT_VIEW) return JSON.stringify(value) === JSON.stringify(DEFAULT_VIEW[key]);
+  if (key === "exclusions") return $.isEmptyObject(value);
+  return value === DEFAULT_ORDER;  // rowOrder, colOrder
+}
+
 function viewQuery(config) {
   const params = new URLSearchParams();
   for (const key of SAVED_KEYS) {
-    const value = config[key];
-    // Leave out defaults to keep links short; rows and cols are kept even when empty, since [] differs from the default.
-    if (value === undefined || (key === "exclusions" && $.isEmptyObject(value))) continue;
-    if ((key === "rowOrder" || key === "colOrder") && value === DEFAULT_ORDER) continue;
-    params.set(key, JSON.stringify(value));
+    if (config[key] !== undefined && !isDefault(key, config[key])) params.set(key, JSON.stringify(config[key]));
   }
-  return "?" + params.toString();
+  return "?" + (params.toString() || "view=default");
 }
 
 function onRefresh(config) {
@@ -122,8 +127,7 @@ fetch("transactions.json")
     const unclassified = data.filter(r => r.Group === "Uncategorised").length;
     $("#status").text(`${data.length.toLocaleString()} transactions · ${unclassified.toLocaleString()} unclassified`);
     // A view in the URL wins over the one remembered in this browser.
-    const fromUrl = urlView();
-    render(data, $.isEmptyObject(fromUrl) ? storedView() : fromUrl);
+    render(data, urlView() ?? storedView());
     $("#reset").on("click", () => {
       try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* storage unavailable */ }
       history.replaceState(null, "", location.pathname);
