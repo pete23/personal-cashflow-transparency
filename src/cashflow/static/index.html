@@ -38,9 +38,11 @@
 <script src="vendor/subtotal.min.js"></script>
 <script>
 const STORAGE_KEY = "cashflow-pivot-view";
-// Filters are kept as exclusions only: pivottable also reports the matching inclusions, but saving those
-// would pin today's values and hide any new year or category when the view is reopened.
-const SAVED_KEYS = ["rows", "cols", "vals", "aggregatorName", "rendererName", "exclusions", "rowOrder", "colOrder"];
+// Each filtered field is saved as whichever list is shorter. Exclusions are preferred on a tie, since
+// they keep showing new years and categories when a view is reopened; inclusions keep "select none,
+// then tick a few" on a field with thousands of values from producing a link too long to open.
+const SAVED_KEYS = ["rows", "cols", "vals", "aggregatorName", "rendererName", "exclusions", "inclusions", "rowOrder", "colOrder"];
+const MENU_LIMIT = 10000;  // filterable values per field; pivottable's default of 500 rules out Details and Reference
 const DEFAULT_ORDER = "key_a_to_z";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -81,7 +83,7 @@ function urlView() {
 
 function isDefault(key, value) {
   if (key in DEFAULT_VIEW) return JSON.stringify(value) === JSON.stringify(DEFAULT_VIEW[key]);
-  if (key === "exclusions") return $.isEmptyObject(value);
+  if (key === "exclusions" || key === "inclusions") return $.isEmptyObject(value);
   return value === DEFAULT_ORDER;  // rowOrder, colOrder
 }
 
@@ -93,9 +95,20 @@ function viewQuery(config) {
   return "?" + (params.toString() || "view=default");
 }
 
+function compactFilters(config) {
+  const exclusions = {}, inclusions = {};
+  for (const [attr, excluded] of Object.entries(config.exclusions || {})) {
+    const included = (config.inclusions || {})[attr] || [];
+    if (included.length < excluded.length) inclusions[attr] = included;
+    else exclusions[attr] = excluded;
+  }
+  return { exclusions, inclusions };
+}
+
 function onRefresh(config) {
   const view = {};
   for (const key of SAVED_KEYS) view[key] = config[key];
+  Object.assign(view, compactFilters(config));
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(view)); } catch (e) { /* storage unavailable */ }
   $("#view-link").attr("href", location.pathname + viewQuery(view));
 }
@@ -113,6 +126,7 @@ function render(data, view) {
     rendererOptions: { collapseRowsAt: 0 },
     sorters: { Month: utils.sortAs(MONTHS) },
     hiddenFromDragDrop: ["Amount"],
+    menuLimit: MENU_LIMIT,
     unusedAttrsVertical: true,
     onRefresh: onRefresh,
   }, DEFAULT_VIEW, view), true);
