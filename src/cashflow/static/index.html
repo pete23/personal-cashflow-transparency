@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cashflow Pivot</title>
+<link rel="stylesheet" href="vendor/pivot.min.css">
+<link rel="stylesheet" href="vendor/subtotal.min.css">
+<style>
+  :root { --text: #1f2328; --muted: #656d76; --bg: #ffffff; --border: #d0d7de; --accent: #0969da; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--text);
+         font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; margin-bottom: 12px; }
+  h1 { font-size: 18px; margin: 0; }
+  #status { color: var(--muted); }
+  button { font: inherit; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px;
+           background: #f6f8fa; color: var(--text); cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  #output { overflow-x: auto; }
+  .pvtUi { font-size: 13px; }
+  table.pvtTable td.pvtVal, table.pvtTable td.pvtTotal, table.pvtTable td.pvtGrandTotal,
+  table.pvtTable td.pvtRowSubtotal, table.pvtTable td.pvtColSubtotal { font-variant-numeric: tabular-nums; white-space: nowrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Cashflow</h1>
+  <span id="status">Loading transactions…</span>
+  <button id="reset" type="button">Reset view</button>
+</header>
+<div id="output"></div>
+
+<script src="vendor/jquery.min.js"></script>
+<script src="vendor/jquery-ui.min.js"></script>
+<script src="vendor/pivot.min.js"></script>
+<script src="vendor/subtotal.min.js"></script>
+<script>
+const STORAGE_KEY = "cashflow-pivot-view";
+const SAVED_KEYS = ["rows", "cols", "vals", "aggregatorName", "rendererName", "inclusions", "exclusions", "rowOrder", "colOrder"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const utils = $.pivotUtilities;
+const wholePounds = utils.numberFormat({ prefix: "£", digitsAfterDecimal: 0 });
+const pounds = x => (x < 0 ? "-" + wholePounds(-x) : wholePounds(x));  // "-£5", not "£-5"
+const tpl = utils.aggregatorTemplates;
+
+const DEFAULT_VIEW = {
+  rows: ["Group", "Subcategory"],
+  cols: ["Year"],
+  vals: ["Amount"],
+  aggregatorName: "Sum £",
+  rendererName: "Table With Subtotal",
+};
+
+function loadView() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    return saved && typeof saved === "object" ? saved : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveView(config) {
+  const view = {};
+  for (const key of SAVED_KEYS) view[key] = config[key];
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(view)); } catch (e) { /* storage unavailable */ }
+}
+
+function render(data, view) {
+  $("#output").pivotUI(data, Object.assign({
+    dataClass: utils.SubtotalPivotData,
+    renderers: Object.assign({}, utils.subtotal_renderers, utils.renderers),
+    aggregators: Object.assign({
+      "Sum £": tpl.sum(pounds),
+      "Average £": tpl.average(pounds),
+      "Count": tpl.count(),
+    }, utils.subtotal_aggregators),
+    // Collapse to the taxonomy group; click a group to expand its subcategories.
+    rendererOptions: { collapseRowsAt: 0 },
+    sorters: { Month: utils.sortAs(MONTHS) },
+    hiddenFromDragDrop: ["Amount"],
+    unusedAttrsVertical: true,
+    onRefresh: saveView,
+  }, DEFAULT_VIEW, view), true);
+}
+
+fetch("transactions.json")
+  .then(response => {
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  })
+  .then(data => {
+    const unclassified = data.filter(r => r.Group === "Uncategorised").length;
+    $("#status").text(`${data.length.toLocaleString()} transactions · ${unclassified.toLocaleString()} unclassified`);
+    render(data, loadView());
+    $("#reset").on("click", () => {
+      try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* storage unavailable */ }
+      render(data, {});
+    });
+  })
+  .catch(error => $("#status").text(`Could not load transactions: ${error.message}`));
+</script>
+</body>
+</html>

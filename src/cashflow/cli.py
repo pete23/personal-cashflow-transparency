@@ -12,6 +12,7 @@ from cashflow.pdf import pdf_to_text
 from cashflow.review import review, summary
 from cashflow.rules import apply, load_rules, load_taxonomy
 from cashflow.scan import find_files
+from cashflow.serve import make_server
 
 
 def scan(args: argparse.Namespace) -> int:
@@ -130,6 +131,26 @@ def classify(args: argparse.Namespace) -> int:
     return 0
 
 
+def serve(args: argparse.Namespace) -> int:
+    if not args.transactions.is_file():
+        print(f"cashflow: not a file: {args.transactions}", file=sys.stderr)
+        return 2
+    server = make_server(args.transactions, args.port)
+    url = f"http://127.0.0.1:{server.server_address[1]}/"
+    print(f"Serving {args.transactions} at {url} (ctrl-c to stop)")
+    if args.open:
+        import webbrowser
+
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print()
+    finally:
+        server.server_close()
+    return 0
+
+
 def _assign_ids(rows: list[dict]) -> None:
     """Give each row a short id that is stable across reruns, so manual classifications stick.
 
@@ -178,6 +199,12 @@ def build_parser() -> argparse.ArgumentParser:
     classify_parser.add_argument("--taxonomy", type=Path, help="taxonomy TOML (default: the built-in one)")
     classify_parser.add_argument("--no-review", action="store_true", help="apply rules and report, without prompting")
     classify_parser.set_defaults(handler=classify)
+
+    serve_parser = commands.add_parser("serve", help="explore a classified transactions JSON file in a pivot table")
+    serve_parser.add_argument("transactions", type=Path, help="JSON from `cashflow transactions`, ideally classified")
+    serve_parser.add_argument("--port", type=int, default=8000)
+    serve_parser.add_argument("--open", action="store_true", help="open the page in a browser")
+    serve_parser.set_defaults(handler=serve)
 
     check_parser = commands.add_parser(
         "check", help="report missing, duplicate and overlapping statements for each account"

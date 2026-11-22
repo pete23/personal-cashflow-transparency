@@ -21,7 +21,7 @@ cashflow = "cashflow.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-cashflow = ["taxonomy.toml"]
+cashflow = ["taxonomy.toml", "static/*.html", "static/vendor/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
