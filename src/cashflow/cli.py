@@ -1,5 +1,6 @@
 import argparse
 import dataclasses
+import errno
 import hashlib
 import json
 import sys
@@ -13,6 +14,8 @@ from cashflow.review import review, summary
 from cashflow.rules import apply, load_rules, load_taxonomy
 from cashflow.scan import find_files
 from cashflow.serve import make_server
+
+DEFAULT_TRANSACTIONS = Path("data/transactions.json")
 
 
 def scan(args: argparse.Namespace) -> int:
@@ -71,10 +74,12 @@ def transactions(args: argparse.Namespace) -> int:
     ]
     _assign_ids(rows)
     output = json.dumps(rows, default=_json_value, indent=1) + "\n"
-    if args.output:
-        args.output.write_text(output)
-    else:
+    if str(args.output) == "-":
         sys.stdout.write(output)
+    else:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(output)
+        print(f"Wrote {len(rows)} rows to {args.output}", file=sys.stderr)
     return 1 if failed else 0
 
 
@@ -98,7 +103,16 @@ def check(args: argparse.Namespace) -> int:
     return 1 if failed or findings else 0
 
 
+def _missing_transactions(path: Path) -> bool:
+    if path.is_file():
+        return False
+    print(f"cashflow: {path} not found; run `cashflow transactions <statements directory>` first", file=sys.stderr)
+    return True
+
+
 def classify(args: argparse.Namespace) -> int:
+    if _missing_transactions(args.transactions):
+        return 2
     rows = json.loads(args.transactions.read_text())
     taxonomy = load_taxonomy(args.taxonomy)
 
@@ -132,13 +146,17 @@ def classify(args: argparse.Namespace) -> int:
 
 
 def serve(args: argparse.Namespace) -> int:
-    if not args.transactions.is_file():
-        print(f"cashflow: not a file: {args.transactions}", file=sys.stderr)
+    if _missing_transactions(args.transactions):
         return 2
-    server = make_server(args.transactions, args.port)
+    try:
+        server = make_server(args.transactions, args.port)
+    except OSError as e:
+        if e.errno != errno.EADDRINUSE:
+            raise
+        server = make_server(args.transactions, 0)  # let the OS pick a free port
     url = f"http://127.0.0.1:{server.server_address[1]}/"
-    print(f"Serving {args.transactions} at {url} (ctrl-c to stop)")
-    if args.open:
+    print(f"Serving {args.transactions} at {url} (ctrl-c to stop)", flush=True)
+    if not args.no_open:
         import webbrowser
 
         webbrowser.open(url)
@@ -188,22 +206,28 @@ def build_parser() -> argparse.ArgumentParser:
         "transactions", help="parse every PDF statement in a directory into JSON transactions"
     )
     transactions_parser.add_argument("directory", type=Path)
-    transactions_parser.add_argument("-o", "--output", type=Path, help="write JSON here instead of stdout")
+    transactions_parser.add_argument(
+        "-o", "--output", type=Path, default=DEFAULT_TRANSACTIONS, help=f"where to write the JSON, or - for stdout (default: {DEFAULT_TRANSACTIONS})"
+    )
     transactions_parser.set_defaults(handler=transactions)
 
     classify_parser = commands.add_parser(
         "classify", help="apply rules to a transactions JSON file, then review the biggest unclassified rows"
     )
-    classify_parser.add_argument("transactions", type=Path, help="JSON from `cashflow transactions`, updated in place")
+    classify_parser.add_argument(
+        "transactions", type=Path, nargs="?", default=DEFAULT_TRANSACTIONS, help=f"JSON from `cashflow transactions`, updated in place (default: {DEFAULT_TRANSACTIONS})"
+    )
     classify_parser.add_argument("--rules", type=Path, default=Path("rules.toml"), help="personal rules file (default: rules.toml)")
     classify_parser.add_argument("--taxonomy", type=Path, help="taxonomy TOML (default: ./taxonomy.toml if present, else the built-in one)")
     classify_parser.add_argument("--no-review", action="store_true", help="apply rules and report, without prompting")
     classify_parser.set_defaults(handler=classify)
 
     serve_parser = commands.add_parser("serve", help="explore a classified transactions JSON file in a pivot table")
-    serve_parser.add_argument("transactions", type=Path, help="JSON from `cashflow transactions`, ideally classified")
-    serve_parser.add_argument("--port", type=int, default=8000)
-    serve_parser.add_argument("--open", action="store_true", help="open the page in a browser")
+    serve_parser.add_argument(
+        "transactions", type=Path, nargs="?", default=DEFAULT_TRANSACTIONS, help=f"JSON from `cashflow classify` (default: {DEFAULT_TRANSACTIONS})"
+    )
+    serve_parser.add_argument("--port", type=int, default=8000, help="port to try first; a free one is used if it's taken (default: 8000)")
+    serve_parser.add_argument("--no-open", action="store_true", help="don't open the page in a browser")
     serve_parser.set_defaults(handler=serve)
 
     check_parser = commands.add_parser(

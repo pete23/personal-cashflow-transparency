@@ -78,3 +78,44 @@ def test_transactions_skips_duplicate_statements(tmp_path, monkeypatch, capsys):
     assert main(["transactions", str(tmp_path), "-o", str(out)]) == 0
     assert {r["source"] for r in json.loads(out.read_text())} == {"dec.pdf"}
     assert "dec-2.pdf repeats dec.pdf (skipped)" in capsys.readouterr().err
+
+
+def test_classify_and_serve_default_to_data_transactions_json():
+    from cashflow.cli import DEFAULT_TRANSACTIONS, build_parser
+
+    parser = build_parser()
+    for command in ("classify", "serve"):
+        assert parser.parse_args([command]).transactions == DEFAULT_TRANSACTIONS
+    assert parser.parse_args(["serve"]).no_open is False
+    assert parser.parse_args(["transactions", "statements"]).output == DEFAULT_TRANSACTIONS
+
+
+def test_missing_transactions_file_says_how_to_make_one(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    assert main(["classify"]) == 2
+    assert "run `cashflow transactions <statements directory>` first" in capsys.readouterr().err
+
+
+def test_serve_falls_back_to_a_free_port_and_opens_the_browser(tmp_path, monkeypatch, capsys):
+    import socket
+    import webbrowser
+
+    from cashflow import serve
+
+    path = tmp_path / "transactions.json"
+    path.write_text("[]")
+    opened = []
+    monkeypatch.setattr(webbrowser, "open", opened.append)
+
+    def stop(self):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(serve.LocalServer, "serve_forever", stop)
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        taken = busy.getsockname()[1]
+        assert main(["serve", str(path), "--port", str(taken)]) == 0
+    [url] = opened
+    assert url.startswith("http://127.0.0.1:") and f":{taken}/" not in url
+    assert url in capsys.readouterr().out
