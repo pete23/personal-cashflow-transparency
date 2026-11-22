@@ -27,3 +27,24 @@ def test_scan_prints_relative_paths(tmp_path, capsys):
 def test_scan_rejects_missing_directory(tmp_path, capsys):
     assert main(["scan", str(tmp_path / "nope")]) == 2
     assert "not a directory" in capsys.readouterr().err
+
+
+def test_transactions_writes_json_and_flags_unreconciled(tmp_path, monkeypatch, capsys):
+    import json
+
+    from cashflow import cli
+    from test_bank_h import statement
+
+    (tmp_path / "good.pdf").write_text("")
+    (tmp_path / "notes.txt").write_text("")
+    monkeypatch.setattr(cli, "pdf_to_text", lambda path: statement())
+    out = tmp_path / "out.json"
+
+    assert main(["transactions", str(tmp_path), "-o", str(out)]) == 0
+    rows = json.loads(out.read_text())
+    assert {r["source"] for r in rows} == {"good.pdf"}
+    assert rows[1]["amount"] == -40.0 and rows[1]["date"] == "2025-12-03"
+
+    monkeypatch.setattr(cli, "pdf_to_text", lambda path: statement().replace("1,100.50", "1,100.00"))
+    assert main(["transactions", str(tmp_path), "-o", str(out)]) == 1
+    assert "good.pdf: 2026-01-01 LANDLORD: running balance -50.00 but statement shows -50.50" in capsys.readouterr().err
