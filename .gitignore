@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+build/
+dist/
+
+# Real financial data must never be committed to this public repo
+*.pdf
+*.csv
+statements/
+output/
