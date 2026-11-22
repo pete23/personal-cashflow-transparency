@@ -1,12 +1,16 @@
 import argparse
 import dataclasses
+import hashlib
 import json
 import sys
+from collections import Counter
 from pathlib import Path
 
 from cashflow.bank_h import Transaction, check_balances, parse_statement
 from cashflow.completeness import Finding, check_completeness, duplicate_sources, summarise
 from cashflow.pdf import pdf_to_text
+from cashflow.review import review, summary
+from cashflow.rules import apply, load_rules, load_taxonomy
 from cashflow.scan import find_files
 
 
@@ -64,6 +68,7 @@ def transactions(args: argparse.Namespace) -> int:
         if source not in skipped
         for t in txs
     ]
+    _assign_ids(rows)
     output = json.dumps(rows, default=_json_value, indent=1) + "\n"
     if args.output:
         args.output.write_text(output)
@@ -92,6 +97,54 @@ def check(args: argparse.Namespace) -> int:
     return 1 if failed or findings else 0
 
 
+def classify(args: argparse.Namespace) -> int:
+    rows = json.loads(args.transactions.read_text())
+    taxonomy = load_taxonomy(args.taxonomy)
+
+    def reclassify():
+        apply(rows, load_rules(args.rules, taxonomy))
+        args.transactions.write_text(json.dumps(rows, indent=1) + "\n")
+
+    try:
+        reclassify()
+    except ValueError as e:
+        print(f"cashflow: {e}", file=sys.stderr)
+        return 2
+    if args.no_review or not sys.stdin.isatty():
+        print(summary(rows))
+        return 0
+
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.completion import FuzzyCompleter, WordCompleter
+
+    categories = PromptSession(
+        completer=FuzzyCompleter(WordCompleter(taxonomy, sentence=True, ignore_case=True)),
+        complete_while_typing=True,
+    )
+    plain = PromptSession()
+    try:
+        review(rows, args.rules, taxonomy, categories.prompt, plain.prompt, reclassify)
+    except (EOFError, KeyboardInterrupt):
+        print()
+    print(summary(rows))
+    return 0
+
+
+def _assign_ids(rows: list[dict]) -> None:
+    """Give each row a short id that is stable across reruns, so manual classifications stick.
+
+    Built from the row's content rather than its source file name; identical rows on
+    the same day are told apart by their order.
+    """
+    seen = Counter()
+    for row in rows:
+        key = "|".join(
+            str(row[k]) for k in ("account_number", "kind", "date", "type", "details", "reference", "amount", "balance")
+        )
+        seen[key] += 1
+        row["id"] = hashlib.sha1(f"{key}|{seen[key]}".encode()).hexdigest()[:12]
+
+
 def _json_value(value):
     if hasattr(value, "isoformat"):
         return value.isoformat()
@@ -116,6 +169,15 @@ def build_parser() -> argparse.ArgumentParser:
     transactions_parser.add_argument("directory", type=Path)
     transactions_parser.add_argument("-o", "--output", type=Path, help="write JSON here instead of stdout")
     transactions_parser.set_defaults(handler=transactions)
+
+    classify_parser = commands.add_parser(
+        "classify", help="apply rules to a transactions JSON file, then review the biggest unclassified rows"
+    )
+    classify_parser.add_argument("transactions", type=Path, help="JSON from `cashflow transactions`, updated in place")
+    classify_parser.add_argument("--rules", type=Path, default=Path("rules.toml"), help="personal rules file (default: rules.toml)")
+    classify_parser.add_argument("--taxonomy", type=Path, help="taxonomy TOML (default: the built-in one)")
+    classify_parser.add_argument("--no-review", action="store_true", help="apply rules and report, without prompting")
+    classify_parser.set_defaults(handler=classify)
 
     check_parser = commands.add_parser(
         "check", help="report missing, duplicate and overlapping statements for each account"

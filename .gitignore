@@ -11,3 +11,8 @@ dist/
 *.csv
 statements/
 output/
+data/
+transactions*.json
+
+# Personal classification rules name merchants and people
+rules.toml
