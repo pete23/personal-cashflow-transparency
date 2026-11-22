@@ -1,6 +1,8 @@
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
 from cashflow.bank_h import check_balances, money, parse_statement
 
 # Right edges of the amount columns on each page; they differ, as they do in real statements.
@@ -30,7 +32,7 @@ ACCOUNT_DETAILS = [
 ]
 
 
-def statement(opening_row=True):
+def statement(opening_row=True, utilities="ACME UTILITIES", employer="EMPLOYER LTD"):
     lines = [
         "                                       Your Statement",
         "                                                  OpeningBalance       £100.00",
@@ -45,7 +47,7 @@ def statement(opening_row=True):
     if opening_row:
         lines.append(row("       02 Dec 25   BALANCEBROUGHTFORWARD   .", balance="100.00"))
     lines += [
-        row("       03 Dec 25 DD ACME UTILITIES", paid_out="40.00"),
+        row(f"       03 Dec 25 DD {utilities}", paid_out="40.00"),
         row("                VIS INT'L 0001"),
         row("                   SOME SHOP"),
         row("                   USD 12.00 @ 1.2000"),
@@ -56,7 +58,7 @@ def statement(opening_row=True):
         *(line.format(sheet=102) for line in ACCOUNT_DETAILS),
         header(1),
         row("                   BALANCEBROUGHTFORWARD", balance="50.00", page=1),
-        row("       01 Jan 26 CR EMPLOYER LTD", page=1),
+        row(f"       01 Jan 26 CR {employer}", page=1),
         row("                   SALARY", paid_in="1,000.00", page=1),
         row("                SO LANDLORD", paid_out="1,100.50", balance="50.50 D", page=1),
         row("                   BALANCECARRIEDFORWARD", balance="50.50 D", page=1),
@@ -107,3 +109,17 @@ def test_check_balances_reports_mismatch():
     txs[1].amount = Decimal("-41.00")
     problems = check_balances(txs)
     assert len(problems) == 1 and "running balance 49.00 but statement shows 50.00" in problems[0]
+
+
+def test_glued_payment_reference_moves_from_details_to_reference():
+    # PET-14: some payers print as "<long reference><name>" with no space, e.g. "123456789X EXAM P".
+    text = statement(employer="123456789X EXAM P")
+    salary = parse_statement(text)[3]
+    assert (salary.type, salary.details, salary.reference) == ("CR", "X EXAM P", "123456789 SALARY")
+    assert check_balances(parse_statement(text)) == []
+
+
+@pytest.mark.parametrize("details", ["8CS MEZZ STARBUCK", "38DEVONSHIRE STREE", "4zqnIM1mevcG", "12345 ABC"])
+def test_short_or_mixed_digit_prefixes_stay_in_details(details):
+    utilities = parse_statement(statement(utilities=details))[1]
+    assert (utilities.details, utilities.reference) == (details, "")

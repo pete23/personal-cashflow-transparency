@@ -16,6 +16,8 @@ PERIOD = re.compile(r"^\s*(\d{1,2} [A-Z][a-z]+(?: \d{4})?) to (\d{1,2} [A-Z][a-z
 ACCOUNT = re.compile(r"^\s*(.*?)\s+(\d{2}-\d{2}-\d{2})\s+(\d{8})\s+(\d+)\s*$")
 SUMMARY = re.compile(r"(Opening|Closing)\s*Balance\s+£?(\d{1,3}(?:,\d{3})*\.\d{2}(?: D)?)")
 HEADER = re.compile(r"Paid\s*out\s+£?\s*Paid\s*in\s+£?\s*Balance")
+# Some payers print as "<payment reference><name>" with no space, e.g. "123456789X EXAM P".
+GLUED_REFERENCE = re.compile(r"^(\d{6,})(?=[A-Z])")
 
 # Amounts are right-aligned under their headers; text extraction can drift a few characters.
 COLUMN_TOLERANCE = 4
@@ -136,8 +138,13 @@ def parse_statement(text: str) -> list[Transaction]:
         if "out" in amounts or "in" in amounts:
             first, *rest = pending or [""]
             type_, _, details = first.partition(" ")
+            details = details.strip()
+            glued = GLUED_REFERENCE.match(details)
+            if glued:
+                details = details[glued.end() :]
+                rest.insert(0, glued.group(1))
             amount = amounts.get("in", Decimal(0)) - amounts.get("out", Decimal(0))
-            emit("transaction", details.strip(), " ".join(rest), type_, amount, amounts.get("balance"))
+            emit("transaction", details, " ".join(rest), type_, amount, amounts.get("balance"))
             pending = []
 
     if not any(t.kind == "opening_balance" for t in transactions):
