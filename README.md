@@ -21,3 +21,9 @@ python3 -m venv .venv
 ```
 
 `data/` and `rules.toml` hold personal data and are gitignored.
+
+## Licence
+
+This project is licensed under the GNU General Public License v3.0; see [LICENSE](LICENSE).
+
+It includes third-party front-end libraries in [`src/cashflow/static/vendor/`](src/cashflow/static/vendor/), which remain under their own MIT licences: PivotTable.js, subtotal.js, jQuery and jQuery UI. Each licence is kept alongside its library, and the vendor [README](src/cashflow/static/vendor/README.md) lists versions and sources.
