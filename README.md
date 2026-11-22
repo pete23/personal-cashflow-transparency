@@ -20,6 +20,8 @@ python3 -m venv .venv
 .venv/bin/cashflow serve                             # explore in a pivot table; opens your browser
 ```
 
+`serve` listens on this machine only. `--host 0.0.0.0` makes it reachable from your network, with no login or encryption: anyone who can reach it can read your transactions.
+
 `data/`, `rules.toml` and `taxonomy.toml` hold personal data and are gitignored. `classify` uses `./taxonomy.toml` if present, otherwise the built-in default; copy `src/cashflow/default_taxonomy.toml` to start your own.
 
 ## Licence

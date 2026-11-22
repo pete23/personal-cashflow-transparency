@@ -1,6 +1,7 @@
 """Serve the pivot UI and the classified transactions on localhost."""
 
 import json
+import socket
 from functools import partial
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -56,6 +57,16 @@ class LocalServer(ThreadingHTTPServer):
         self.server_name, self.server_port = self.server_address[:2]
 
 
-def make_server(transactions: Path, port: int) -> ThreadingHTTPServer:
-    # Bound to localhost only: this serves personal financial data.
-    return LocalServer(("127.0.0.1", port), partial(Handler, transactions=transactions))
+def make_server(transactions: Path, port: int, host: str = "127.0.0.1") -> ThreadingHTTPServer:
+    # Localhost by default: this serves personal financial data with no authentication.
+    return LocalServer((host, port), partial(Handler, transactions=transactions))
+
+
+def lan_address() -> str | None:
+    """This machine's address on the local network, found without sending any traffic."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        try:
+            probe.connect(("192.0.2.1", 9))  # a reserved documentation address; UDP connect sends nothing
+            return probe.getsockname()[0]
+        except OSError:
+            return None

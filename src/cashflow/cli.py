@@ -13,7 +13,7 @@ from cashflow.pdf import pdf_to_text
 from cashflow.review import review, summary
 from cashflow.rules import apply, load_rules, load_taxonomy
 from cashflow.scan import find_files
-from cashflow.serve import make_server
+from cashflow.serve import lan_address, make_server
 
 DEFAULT_TRANSACTIONS = Path("data/transactions.json")
 
@@ -149,13 +149,20 @@ def serve(args: argparse.Namespace) -> int:
     if _missing_transactions(args.transactions):
         return 2
     try:
-        server = make_server(args.transactions, args.port)
+        server = make_server(args.transactions, args.port, args.host)
     except OSError as e:
         if e.errno != errno.EADDRINUSE:
             raise
-        server = make_server(args.transactions, 0)  # let the OS pick a free port
-    url = f"http://127.0.0.1:{server.server_address[1]}/"
+        server = make_server(args.transactions, 0, args.host)  # let the OS pick a free port
+    port = server.server_address[1]
+    local = args.host in ("127.0.0.1", "localhost", "::1")
+    url = f"http://{args.host if local else '127.0.0.1'}:{port}/"
     print(f"Serving {args.transactions} at {url} (ctrl-c to stop)", flush=True)
+    if not local:
+        shown = lan_address() if args.host in ("0.0.0.0", "") else args.host
+        if shown:
+            print(f"On your network: http://{shown}:{port}/", flush=True)
+        print("Warning: anyone who can reach this address can read your transactions; there is no login or encryption.", flush=True)
     if not args.no_open:
         import webbrowser
 
@@ -225,6 +232,9 @@ def build_parser() -> argparse.ArgumentParser:
     serve_parser = commands.add_parser("serve", help="explore a classified transactions JSON file in a pivot table")
     serve_parser.add_argument(
         "transactions", type=Path, nargs="?", default=DEFAULT_TRANSACTIONS, help=f"JSON from `cashflow classify` (default: {DEFAULT_TRANSACTIONS})"
+    )
+    serve_parser.add_argument(
+        "--host", default="127.0.0.1", help="address to listen on; 0.0.0.0 for every network interface (default: 127.0.0.1, this machine only)"
     )
     serve_parser.add_argument("--port", type=int, default=8000, help="port to try first; a free one is used if it's taken (default: 8000)")
     serve_parser.add_argument("--no-open", action="store_true", help="don't open the page in a browser")

@@ -119,3 +119,42 @@ def test_serve_falls_back_to_a_free_port_and_opens_the_browser(tmp_path, monkeyp
     [url] = opened
     assert url.startswith("http://127.0.0.1:") and f":{taken}/" not in url
     assert url in capsys.readouterr().out
+
+
+def test_serve_on_all_interfaces_shows_lan_address_and_warns(tmp_path, monkeypatch, capsys):
+    import webbrowser
+
+    from cashflow import cli, serve
+
+    path = tmp_path / "transactions.json"
+    path.write_text("[]")
+    opened, bound = [], []
+    monkeypatch.setattr(webbrowser, "open", opened.append)
+    monkeypatch.setattr(cli, "lan_address", lambda: "192.168.1.20")
+    real_make_server = serve.make_server
+
+    def record(transactions, port, host="127.0.0.1"):
+        bound.append(host)
+        return real_make_server(transactions, 0, "127.0.0.1")  # don't open a real LAN socket in tests
+
+    monkeypatch.setattr(cli, "make_server", record)
+    monkeypatch.setattr(serve.LocalServer, "serve_forever", lambda self: (_ for _ in ()).throw(KeyboardInterrupt))
+
+    assert main(["serve", str(path), "--host", "0.0.0.0"]) == 0
+    out = capsys.readouterr().out
+    assert bound == ["0.0.0.0"]
+    assert "On your network: http://192.168.1.20:" in out and "Warning: anyone who can reach" in out
+    assert opened[0].startswith("http://127.0.0.1:")
+
+
+def test_serve_defaults_to_loopback_without_warning(tmp_path, monkeypatch, capsys):
+    import webbrowser
+
+    from cashflow import serve
+
+    path = tmp_path / "transactions.json"
+    path.write_text("[]")
+    monkeypatch.setattr(webbrowser, "open", lambda url: None)
+    monkeypatch.setattr(serve.LocalServer, "serve_forever", lambda self: (_ for _ in ()).throw(KeyboardInterrupt))
+    assert main(["serve", str(path), "--port", "0"]) == 0
+    assert "Warning" not in capsys.readouterr().out
