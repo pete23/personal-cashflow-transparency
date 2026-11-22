@@ -1,4 +1,5 @@
-# Two-level taxonomy: each group lists its subcategories.
+# Default two-level taxonomy: each group lists its subcategories.
+# Copy to taxonomy.toml in the working directory (gitignored) to make your own.
 # Categories are written "Group / Subcategory" in rules and output.
 
 Income = ["Salary", "Bonus", "Self-employment", "Interest", "Dividends", "Refunds", "Benefits", "Gifts", "Other"]

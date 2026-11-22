@@ -14,5 +14,6 @@ output/
 data/
 transactions*.json
 
-# Personal classification rules name merchants and people
+# Personal classification rules and taxonomy name merchants, people and circumstances
 rules.toml
+/taxonomy.toml

@@ -196,7 +196,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     classify_parser.add_argument("transactions", type=Path, help="JSON from `cashflow transactions`, updated in place")
     classify_parser.add_argument("--rules", type=Path, default=Path("rules.toml"), help="personal rules file (default: rules.toml)")
-    classify_parser.add_argument("--taxonomy", type=Path, help="taxonomy TOML (default: the built-in one)")
+    classify_parser.add_argument("--taxonomy", type=Path, help="taxonomy TOML (default: ./taxonomy.toml if present, else the built-in one)")
     classify_parser.add_argument("--no-review", action="store_true", help="apply rules and report, without prompting")
     classify_parser.set_defaults(handler=classify)
 

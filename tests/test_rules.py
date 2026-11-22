@@ -1,9 +1,13 @@
+from pathlib import Path
+
 import pytest
 
+import cashflow
 from cashflow.review import review, suggested_pattern, unclassified
 from cashflow.rules import Rule, Rules, append_manual, append_rule, apply, load_rules, load_taxonomy
 
-TAXONOMY = load_taxonomy()
+# The packaged default, never a personal taxonomy.toml in the working directory.
+TAXONOMY = load_taxonomy(Path(cashflow.__file__).parent / "default_taxonomy.toml")
 
 
 def tx(details, amount, id_=None, type_="VIS", reference="", account="12345678", kind="transaction"):
@@ -140,3 +144,10 @@ def test_review_skips_on_blank_and_rejects_unknown_category(tmp_path):
     rules = run_review(tmp_path, rows, ["", "Not / Real", "Groceries / Supermarket"], ["r"])
     assert [r.patterns for r in rules.rules] == [{"details": r"^TESCO$"}]
     assert rows[0]["group"] == "Uncategorised"
+
+
+def test_local_taxonomy_overrides_the_default(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert "Transport / Taxis" in load_taxonomy()
+    (tmp_path / "taxonomy.toml").write_text('Mine = ["Only"]\n')
+    assert load_taxonomy() == ["Mine / Only"]

@@ -24,8 +24,14 @@ MATCH_FIELDS = {"details": "details", "reference": "reference", "type": "type", 
 BALANCE_KINDS = {"opening_balance": "Balance / Opening", "closing_balance": "Balance / Closing"}
 
 
+LOCAL_TAXONOMY = Path("taxonomy.toml")
+
+
 def load_taxonomy(path: Path | None = None) -> list[str]:
-    text = path.read_text() if path else resources.files("cashflow").joinpath("taxonomy.toml").read_text()
+    """Load the given taxonomy, else a personal taxonomy.toml in the working directory, else the default."""
+    if path is None and LOCAL_TAXONOMY.exists():
+        path = LOCAL_TAXONOMY
+    text = path.read_text() if path else resources.files("cashflow").joinpath("default_taxonomy.toml").read_text()
     return [f"{group} / {sub}" for group, subs in tomllib.loads(text).items() for sub in subs]
 
 

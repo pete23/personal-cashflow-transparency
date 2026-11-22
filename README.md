@@ -20,7 +20,7 @@ python3 -m venv .venv
 .venv/bin/cashflow serve data/transactions.json --open                         # explore in a pivot table at http://127.0.0.1:8000/
 ```
 
-`data/` and `rules.toml` hold personal data and are gitignored.
+`data/`, `rules.toml` and `taxonomy.toml` hold personal data and are gitignored. `classify` uses `./taxonomy.toml` if present, otherwise the built-in default; copy `src/cashflow/default_taxonomy.toml` to start your own.
 
 ## Licence
 
